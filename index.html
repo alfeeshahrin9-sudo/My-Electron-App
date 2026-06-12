@@ -2,17 +2,119 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>app name</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Desk Tools</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
 
   <body>
     <div class="app">
-      <div id="calendar">
-        <div class="title">Calendar</div>
-        <div id="day"></div>
-        <div id="month"></div>
-      </div>
+      <nav class="navbar" aria-label="Tools">
+        <button class="nav-btn active" data-view="clock" aria-label="Clock">
+          <span class="nav-icon">◷</span>
+          <span class="nav-label">Clock</span>
+        </button>
+        <button class="nav-btn" data-view="weather" aria-label="Weather">
+          <span class="nav-icon">☁</span>
+          <span class="nav-label">Weather</span>
+        </button>
+        <button class="nav-btn" data-view="notes" aria-label="Notes">
+          <span class="nav-icon">✎</span>
+          <span class="nav-label">Notes</span>
+        </button>
+      </nav>
+
+      <main class="content">
+        <!-- Clock -->
+        <section id="view-clock" class="view view-clock active" aria-label="Clock">
+          <div class="view-header">
+            <h1 class="view-title">Clock</h1>
+            <div class="control-row">
+              <label class="field-label" for="timezone-select">Time zone</label>
+              <select id="timezone-select" class="select-input"></select>
+            </div>
+          </div>
+
+          <div class="clock-display">
+            <div id="clock-time" class="clock-time">--:--:--</div>
+            <div id="clock-date" class="clock-date">Loading…</div>
+          </div>
+
+          <div class="calendar-card">
+            <div id="calendar-day" class="calendar-day">--</div>
+            <div id="calendar-month" class="calendar-month">———</div>
+          </div>
+        </section>
+
+        <!-- Weather -->
+        <section id="view-weather" class="view view-weather" aria-label="Weather" hidden>
+          <div class="view-header">
+            <h1 class="view-title">Weather</h1>
+            <form id="location-form" class="location-form">
+              <label class="field-label" for="location-input">Location</label>
+              <div class="location-row">
+                <input
+                  id="location-input"
+                  class="text-input"
+                  type="text"
+                  placeholder="City name…"
+                  autocomplete="off"
+                />
+                <button type="submit" class="action-btn">Go</button>
+              </div>
+            </form>
+          </div>
+
+          <div id="weather-status" class="status-text">Search for a city to load forecast.</div>
+
+          <div id="weather-current" class="weather-current" hidden>
+            <div class="weather-location" id="weather-location-name">—</div>
+            <div class="weather-now">
+              <span id="weather-icon" class="weather-icon">☀</span>
+              <span id="weather-temp" class="weather-temp">--°</span>
+            </div>
+            <div id="weather-desc" class="weather-desc">—</div>
+            <div class="weather-meta">
+              <span id="weather-humidity">Humidity: —</span>
+              <span id="weather-wind">Wind: —</span>
+            </div>
+          </div>
+
+          <div id="weather-forecast" class="weather-forecast" hidden></div>
+        </section>
+
+        <!-- Notes -->
+        <section id="view-notes" class="view view-notes" aria-label="Notes" hidden>
+          <div class="view-header">
+            <h1 class="view-title">Notes</h1>
+            <button id="new-note-btn" class="action-btn">+ New note</button>
+          </div>
+
+          <div class="notes-layout">
+            <aside class="notes-sidebar">
+              <ul id="notes-list" class="notes-list"></ul>
+              <p id="notes-empty" class="notes-empty">No notes yet. Create one!</p>
+            </aside>
+
+            <div class="notes-editor">
+              <input
+                id="note-title"
+                class="note-title-input"
+                type="text"
+                placeholder="Note title…"
+                disabled
+              />
+              <textarea
+                id="note-body"
+                class="note-body-input"
+                placeholder="Start writing…"
+                disabled
+              ></textarea>
+              <button id="delete-note-btn" class="danger-btn" hidden>Delete note</button>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
 
     <script src="script.js"></script>

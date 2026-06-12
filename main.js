@@ -1,22 +1,26 @@
 const { app, BrowserWindow } = require("electron");
 
+let mainWindow;
+
 function createWindow() {
-  const win = new BrowserWindow({
-    width: 214,
-    height: 228,
-    resizable: false,
+  mainWindow = new BrowserWindow({
+    width: 340,
+    height: 520,
+    minWidth: 300,
+    minHeight: 420,
+    resizable: true,
     maximizable: false,
     fullscreenable: false,
-    nodeIntegration: true,
-    frame: false,        // keep this — removes the default OS titlebar
-    transparent: false,  // keep or set to true if you want a transparent bg
+    frame: false,
+    transparent: false,
     movable: true,
     webPreferences: {
-      contextIsolation: true
-    }
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
 
-  win.loadFile("index.html");
+  mainWindow.loadFile("index.html");
 }
 
 app.whenReady().then(createWindow);
@@ -25,6 +29,6 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-const { ipcMain } = require('electron');
-ipcMain.on('minimize', () => win.minimize());
-ipcMain.on('close', () => win.close());
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
