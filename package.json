@@ -1,10 +1,24 @@
 {
   "name": "my-electron-app",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.1.0",
+  "description": "Desk Tools — A cozy pastel desktop widget with Clock & Calendar, Weather, Pomodoro Focus Timer, Daily Tasks, and Notes.",
   "main": "main.js",
   "scripts": {
-  "test": "echo \"Error: no test specified\" && exit 1",
-  "start": "electron ."
+    "start": "electron .",
+    "test": "node --check main.js && node --check preload.js && node --check script.js"
+  },
+  "keywords": [
+    "electron",
+    "desk-tools",
+    "widget",
+    "pomodoro",
+    "weather",
+    "notes",
+    "todo",
+    "clock"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^35.0.0"
   }
 }

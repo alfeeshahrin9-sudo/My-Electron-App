@@ -9,55 +9,166 @@
 
   <body>
     <div class="app">
+      <!-- Custom Frameless Titlebar -->
+      <header class="titlebar">
+        <div class="titlebar-brand">
+          <span class="titlebar-logo">✦</span>
+          <span class="titlebar-title">Desk Tools</span>
+        </div>
+        <div class="titlebar-controls">
+          <button
+            id="btn-sound"
+            class="titlebar-btn"
+            type="button"
+            title="Toggle sound effects"
+            aria-label="Toggle sound effects"
+          >
+            🔊
+          </button>
+          <button
+            id="btn-theme"
+            class="titlebar-btn"
+            type="button"
+            title="Toggle dark mode"
+            aria-label="Toggle dark mode"
+          >
+            🌙
+          </button>
+          <button
+            id="btn-pin"
+            class="titlebar-btn"
+            type="button"
+            title="Pin always on top"
+            aria-label="Pin always on top"
+          >
+            📌
+          </button>
+          <button
+            id="btn-minimize"
+            class="titlebar-btn"
+            type="button"
+            title="Minimize window"
+            aria-label="Minimize window"
+          >
+            ─
+          </button>
+          <button
+            id="btn-close"
+            class="titlebar-btn titlebar-btn-close"
+            type="button"
+            title="Close app"
+            aria-label="Close app"
+          >
+            ✕
+          </button>
+        </div>
+      </header>
+
+      <!-- Navigation Bar -->
       <nav class="navbar" aria-label="Tools">
-        <button class="nav-btn active" data-view="clock" aria-label="Clock">
+        <button class="nav-btn active" data-view="clock" aria-label="Clock" title="Clock & Calendar (Alt+1)">
           <span class="nav-icon">◷</span>
           <span class="nav-label">Clock</span>
         </button>
-        <button class="nav-btn" data-view="weather" aria-label="Weather">
+        <button class="nav-btn" data-view="weather" aria-label="Weather" title="Weather Forecast (Alt+2)">
           <span class="nav-icon">☁</span>
           <span class="nav-label">Weather</span>
         </button>
-        <button class="nav-btn" data-view="notes" aria-label="Notes">
+        <button class="nav-btn" data-view="focus" aria-label="Focus" title="Focus Timer & Stopwatch (Alt+3)">
+          <span class="nav-icon">⏱</span>
+          <span class="nav-label">Focus</span>
+        </button>
+        <button class="nav-btn" data-view="tasks" aria-label="Tasks" title="Daily Tasks (Alt+4)">
+          <span class="nav-icon">✓</span>
+          <span class="nav-label">Tasks</span>
+        </button>
+        <button class="nav-btn" data-view="notes" aria-label="Notes" title="Quick Notes (Alt+5)">
           <span class="nav-icon">✎</span>
           <span class="nav-label">Notes</span>
         </button>
       </nav>
 
       <main class="content">
-        <!-- Clock -->
+        <!-- 1. Clock & Calendar -->
         <section id="view-clock" class="view view-clock active" aria-label="Clock">
           <div class="view-header">
-            <h1 class="view-title">Clock</h1>
+            <div class="header-top-row">
+              <h1 class="view-title">Clock &amp; Calendar</h1>
+              <div class="pill-group">
+                <button id="clock-format-btn" class="mini-pill-btn" type="button" title="Toggle 12h / 24h">
+                  12H
+                </button>
+                <button id="calendar-view-btn" class="mini-pill-btn" type="button" title="Toggle Day Card / Month Grid">
+                  Month ▦
+                </button>
+              </div>
+            </div>
             <div class="control-row">
-              <label class="field-label" for="timezone-select">Time zone</label>
-              <select id="timezone-select" class="select-input"></select>
+              <div class="tz-row">
+                <input
+                  id="timezone-search"
+                  class="text-input tz-search-input"
+                  type="text"
+                  placeholder="Filter time zone…"
+                  autocomplete="off"
+                />
+                <select id="timezone-select" class="select-input" aria-label="Time zone"></select>
+              </div>
             </div>
           </div>
 
           <div class="clock-display">
             <div id="clock-time" class="clock-time">--:--:--</div>
             <div id="clock-date" class="clock-date">Loading…</div>
+            <div id="clock-offset" class="clock-offset">UTC</div>
           </div>
 
-          <div class="calendar-card">
+          <!-- Big Day Card -->
+          <div id="calendar-card" class="calendar-card">
             <div id="calendar-day" class="calendar-day">--</div>
             <div id="calendar-month" class="calendar-month">———</div>
           </div>
+
+          <!-- Interactive Monthly Calendar Grid -->
+          <div id="calendar-grid-card" class="calendar-grid-card" hidden>
+            <div class="cal-nav">
+              <button id="cal-prev" class="cal-nav-btn" type="button" title="Previous month">◀</button>
+              <button id="cal-title" class="cal-title-btn" type="button" title="Jump to current month">
+                Month Year
+              </button>
+              <button id="cal-next" class="cal-nav-btn" type="button" title="Next month">▶</button>
+            </div>
+            <div class="cal-weekdays">
+              <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+            </div>
+            <div id="cal-days" class="cal-days"></div>
+          </div>
         </section>
 
-        <!-- Weather -->
+        <!-- 2. Weather -->
         <section id="view-weather" class="view view-weather" aria-label="Weather" hidden>
           <div class="view-header">
-            <h1 class="view-title">Weather</h1>
+            <div class="header-top-row">
+              <h1 class="view-title">Weather</h1>
+              <div class="pill-group">
+                <button id="weather-unit-btn" class="mini-pill-btn" type="button" title="Switch °C / °F">
+                  °C
+                </button>
+                <button id="weather-locate-btn" class="mini-pill-btn" type="button" title="Detect current location">
+                  📍 Auto
+                </button>
+                <button id="weather-refresh-btn" class="mini-pill-btn" type="button" title="Refresh weather">
+                  ↻
+                </button>
+              </div>
+            </div>
             <form id="location-form" class="location-form">
-              <label class="field-label" for="location-input">Location</label>
               <div class="location-row">
                 <input
                   id="location-input"
                   class="text-input"
                   type="text"
-                  placeholder="City name…"
+                  placeholder="Search city…"
                   autocomplete="off"
                 />
                 <button type="submit" class="action-btn">Go</button>
@@ -65,7 +176,7 @@
             </form>
           </div>
 
-          <div id="weather-status" class="status-text">Search for a city to load forecast.</div>
+          <div id="weather-status" class="status-text">Search for a city or click 📍 Auto to load forecast.</div>
 
           <div id="weather-current" class="weather-current" hidden>
             <div class="weather-location" id="weather-location-name">—</div>
@@ -74,20 +185,158 @@
               <span id="weather-temp" class="weather-temp">--°</span>
             </div>
             <div id="weather-desc" class="weather-desc">—</div>
-            <div class="weather-meta">
-              <span id="weather-humidity">Humidity: —</span>
-              <span id="weather-wind">Wind: —</span>
+            <div class="weather-meta-grid">
+              <div class="weather-stat">
+                <span class="stat-label">Feels Like</span>
+                <span id="weather-feels" class="stat-val">—</span>
+              </div>
+              <div class="weather-stat">
+                <span class="stat-label">Humidity</span>
+                <span id="weather-humidity" class="stat-val">—</span>
+              </div>
+              <div class="weather-stat">
+                <span class="stat-label">Wind</span>
+                <span id="weather-wind" class="stat-val">—</span>
+              </div>
+              <div class="weather-stat">
+                <span class="stat-label">UV Index</span>
+                <span id="weather-uv" class="stat-val">—</span>
+              </div>
             </div>
           </div>
 
           <div id="weather-forecast" class="weather-forecast" hidden></div>
         </section>
 
-        <!-- Notes -->
+        <!-- 3. Focus Timer & Stopwatch -->
+        <section id="view-focus" class="view view-focus" aria-label="Focus Timer" hidden>
+          <div class="view-header">
+            <div class="header-top-row">
+              <h1 class="view-title">Focus &amp; Timer</h1>
+              <div class="pill-group">
+                <button id="mode-pomodoro-btn" class="mini-pill-btn active" type="button">Timer</button>
+                <button id="mode-stopwatch-btn" class="mini-pill-btn" type="button">Stopwatch</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pomodoro / Timer Panel -->
+          <div id="focus-timer-panel" class="focus-panel">
+            <div class="preset-row">
+              <button class="preset-btn active" data-minutes="25" data-label="Focus Session" type="button">
+                Focus 25m
+              </button>
+              <button class="preset-btn" data-minutes="5" data-label="Short Break" type="button">
+                Break 5m
+              </button>
+              <button class="preset-btn" data-minutes="15" data-label="Long Break" type="button">
+                Long 15m
+              </button>
+            </div>
+
+            <div class="timer-card">
+              <div id="timer-label" class="timer-mode-label">Focus Session</div>
+              <div id="timer-display" class="timer-digits">25:00</div>
+              <div class="timer-progress-track">
+                <div id="timer-progress-bar" class="timer-progress-bar" style="width: 100%"></div>
+              </div>
+              <div class="timer-controls">
+                <button id="timer-start-btn" class="action-btn timer-main-btn" type="button">▶ Start</button>
+                <button id="timer-reset-btn" class="action-btn" type="button">↺ Reset</button>
+              </div>
+            </div>
+
+            <div class="custom-timer-row">
+              <label class="field-label" for="custom-minutes-input">Custom (min):</label>
+              <input
+                id="custom-minutes-input"
+                class="text-input custom-min-input"
+                type="number"
+                min="1"
+                max="180"
+                value="25"
+              />
+              <button id="custom-minutes-set" class="action-btn" type="button">Set</button>
+            </div>
+
+            <div class="focus-stats-bar">
+              <span>🔥 Sessions today: <strong id="focus-sessions-count">0</strong></span>
+              <button id="focus-sessions-reset" class="link-btn" type="button">Reset count</button>
+            </div>
+          </div>
+
+          <!-- Stopwatch Panel -->
+          <div id="focus-stopwatch-panel" class="focus-panel" hidden>
+            <div class="timer-card">
+              <div class="timer-mode-label">Stopwatch</div>
+              <div id="sw-display" class="timer-digits">00:00.0</div>
+              <div class="timer-controls">
+                <button id="sw-start-btn" class="action-btn timer-main-btn" type="button">▶ Start</button>
+                <button id="sw-lap-btn" class="action-btn" type="button" disabled>⚑ Lap</button>
+                <button id="sw-reset-btn" class="action-btn" type="button">↺ Reset</button>
+              </div>
+            </div>
+            <ul id="sw-laps" class="sw-laps-list"></ul>
+          </div>
+        </section>
+
+        <!-- 4. Tasks / To-Do List -->
+        <section id="view-tasks" class="view view-tasks" aria-label="Tasks" hidden>
+          <div class="view-header">
+            <div class="header-top-row">
+              <h1 class="view-title">Daily Tasks</h1>
+              <div class="pill-group" id="task-filters">
+                <button class="mini-pill-btn active" data-filter="all" type="button">All</button>
+                <button class="mini-pill-btn" data-filter="active" type="button">Active</button>
+                <button class="mini-pill-btn" data-filter="done" type="button">Done</button>
+              </div>
+            </div>
+
+            <form id="task-form" class="task-form">
+              <input
+                id="task-input"
+                class="text-input"
+                type="text"
+                placeholder="Add a new task…"
+                autocomplete="off"
+              />
+              <select id="task-priority" class="select-input task-priority-select" aria-label="Priority">
+                <option value="normal">Med</option>
+                <option value="high">High</option>
+                <option value="low">Low</option>
+              </select>
+              <button type="submit" class="action-btn">+ Add</button>
+            </form>
+          </div>
+
+          <div class="task-progress-box">
+            <div class="task-progress-meta">
+              <span id="task-summary-text">0 of 0 completed</span>
+              <button id="tasks-clear-done" class="link-btn" type="button" hidden>Clear done</button>
+            </div>
+            <div class="task-progress-track">
+              <div id="task-progress-fill" class="task-progress-fill" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <ul id="tasks-list" class="tasks-list"></ul>
+          <p id="tasks-empty" class="status-text">No tasks here yet. Add one above!</p>
+        </section>
+
+        <!-- 5. Notes -->
         <section id="view-notes" class="view view-notes" aria-label="Notes" hidden>
           <div class="view-header">
-            <h1 class="view-title">Notes</h1>
-            <button id="new-note-btn" class="action-btn">+ New note</button>
+            <div class="header-top-row">
+              <h1 class="view-title">Notes</h1>
+              <button id="new-note-btn" class="action-btn" type="button">+ New note</button>
+            </div>
+            <input
+              id="note-search-input"
+              class="text-input"
+              type="text"
+              placeholder="Search notes…"
+              autocomplete="off"
+            />
           </div>
 
           <div class="notes-layout">
@@ -97,20 +346,42 @@
             </aside>
 
             <div class="notes-editor">
-              <input
-                id="note-title"
-                class="note-title-input"
-                type="text"
-                placeholder="Note title…"
-                disabled
-              />
+              <div class="note-title-row">
+                <input
+                  id="note-title"
+                  class="note-title-input"
+                  type="text"
+                  placeholder="Note title…"
+                  disabled
+                />
+                <button
+                  id="pin-note-btn"
+                  class="mini-icon-btn"
+                  type="button"
+                  title="Pin note to top"
+                  disabled
+                >
+                  ☆
+                </button>
+              </div>
               <textarea
                 id="note-body"
                 class="note-body-input"
                 placeholder="Start writing…"
                 disabled
               ></textarea>
-              <button id="delete-note-btn" class="danger-btn" hidden>Delete note</button>
+              <div id="note-footer" class="note-footer" hidden>
+                <span id="note-stats" class="note-stats">0 words · 0 chars</span>
+                <div class="note-actions">
+                  <button id="copy-note-btn" class="mini-pill-btn" type="button" title="Copy note text">
+                    Copy
+                  </button>
+                  <button id="export-note-btn" class="mini-pill-btn" type="button" title="Save as .txt">
+                    .txt
+                  </button>
+                  <button id="delete-note-btn" class="danger-btn" type="button">Delete</button>
+                </div>
+              </div>
             </div>
           </div>
         </section>
