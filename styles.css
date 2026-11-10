@@ -6,6 +6,10 @@
   padding: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 :root {
   --font: "Pixelify Sans", monospace;
   --titlebar-bg: #e2d6f3;
@@ -226,6 +230,7 @@ body.dark-mode .nav-btn.active {
   flex: 1;
   overflow: hidden;
   position: relative;
+  -webkit-app-region: no-drag;
 }
 
 .view {

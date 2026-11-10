@@ -80,6 +80,13 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+function getLocalDateKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /* ── Synthesized Retro Sound Effects (Web Audio API) ── */
 let soundEnabled = localStorage.getItem(STORAGE_KEYS.sound) !== 'false';
 let audioCtx = null;
@@ -142,7 +149,6 @@ function initTitlebar() {
   const btnMinimize = document.getElementById('btn-minimize');
   const btnClose = document.getElementById('btn-close');
 
-  // Sound toggle
   const updateSoundBtn = () => {
     btnSound.textContent = soundEnabled ? '🔊' : '🔇';
     btnSound.classList.toggle('active', soundEnabled);
@@ -156,7 +162,6 @@ function initTitlebar() {
     if (soundEnabled) playClickSound();
   });
 
-  // Dark Mode toggle
   let isDark = localStorage.getItem(STORAGE_KEYS.theme) === 'dark';
   const applyTheme = () => {
     document.body.classList.toggle('dark-mode', isDark);
@@ -172,7 +177,6 @@ function initTitlebar() {
     playClickSound();
   });
 
-  // Always-on-top Pin (via Electron preload bridge)
   if (window.electronAPI) {
     window.electronAPI.isPinned().then((pinned) => {
       btnPin.classList.toggle('active', Boolean(pinned));
@@ -193,7 +197,6 @@ function initTitlebar() {
       window.electronAPI.close();
     });
   } else {
-    // Fallback when previewed in standard browser
     btnPin.addEventListener('click', () => {
       playClickSound();
       btnPin.classList.toggle('active');
@@ -226,7 +229,6 @@ function initNavigation() {
     });
   });
 
-  // Alt+1 .. Alt+5 shortcuts
   const viewOrder = ['clock', 'weather', 'focus', 'tasks', 'notes'];
   window.addEventListener('keydown', (e) => {
     if (e.altKey && e.key >= '1' && e.key <= '5') {
@@ -248,7 +250,31 @@ let selectedTimezone =
   Intl.DateTimeFormat().resolvedOptions().timeZone;
 let use24Hour = localStorage.getItem(STORAGE_KEYS.clock24h) === 'true';
 let showMonthGrid = localStorage.getItem(STORAGE_KEYS.calendarMode) === 'month';
-let calendarCursor = new Date(); // Tracks displayed month/year in grid
+let lastRenderedDayKey = '';
+
+function getTodayInTimezone(tz) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(new Date());
+
+  return {
+    year: Number(parts.find((p) => p.type === 'year')?.value) || new Date().getFullYear(),
+    month: (Number(parts.find((p) => p.type === 'month')?.value) || 1) - 1,
+    day: Number(parts.find((p) => p.type === 'day')?.value) || 1,
+  };
+}
+
+let calendarCursor = (() => {
+  try {
+    const t = getTodayInTimezone(selectedTimezone);
+    return new Date(t.year, t.month, 1);
+  } catch {
+    return new Date();
+  }
+})();
 
 function getTimezoneOptions() {
   if (typeof Intl.supportedValuesOf === 'function') {
@@ -269,21 +295,31 @@ function populateTimezoneSelect(zones, filterText = '') {
     : zones;
 
   select.innerHTML = '';
-  const listToRender = filtered.length > 0 ? filtered : [selectedTimezone];
 
-  listToRender.forEach((zone) => {
+  if (filtered.length === 0) {
+    const emptyOpt = document.createElement('option');
+    emptyOpt.value = selectedTimezone;
+    emptyOpt.textContent = `No match — keeping ${selectedTimezone.replace(/_/g, ' ')}`;
+    select.appendChild(emptyOpt);
+    select.value = selectedTimezone;
+    return;
+  }
+
+  filtered.forEach((zone) => {
     const option = document.createElement('option');
     option.value = zone;
     option.textContent = zone.replace(/_/g, ' ');
     select.appendChild(option);
   });
 
-  if (listToRender.includes(selectedTimezone)) {
+  if (filtered.includes(selectedTimezone)) {
     select.value = selectedTimezone;
   } else {
-    select.value = listToRender[0];
-    selectedTimezone = listToRender[0];
+    select.value = filtered[0];
+    selectedTimezone = filtered[0];
     localStorage.setItem(STORAGE_KEYS.timezone, selectedTimezone);
+    const t = getTodayInTimezone(selectedTimezone);
+    calendarCursor = new Date(t.year, t.month, 1);
   }
 }
 
@@ -298,6 +334,9 @@ function initClock() {
     selectedTimezone = zones[0];
   }
 
+  const initToday = getTodayInTimezone(selectedTimezone);
+  calendarCursor = new Date(initToday.year, initToday.month, 1);
+
   populateTimezoneSelect(zones);
 
   searchInput.addEventListener('input', () => {
@@ -309,6 +348,8 @@ function initClock() {
   select.addEventListener('change', () => {
     selectedTimezone = select.value;
     localStorage.setItem(STORAGE_KEYS.timezone, selectedTimezone);
+    const t = getTodayInTimezone(selectedTimezone);
+    calendarCursor = new Date(t.year, t.month, 1);
     playClickSound();
     updateClock();
     renderMonthCalendar();
@@ -358,13 +399,30 @@ function initClock() {
 
   document.getElementById('cal-title').addEventListener('click', () => {
     playClickSound();
-    calendarCursor = new Date();
+    const t = getTodayInTimezone(selectedTimezone);
+    calendarCursor = new Date(t.year, t.month, 1);
     renderMonthCalendar();
   });
 
   updateClock();
   renderMonthCalendar();
   setInterval(updateClock, 1000);
+}
+
+function getTimezoneOffsetLabel(now, tz) {
+  try {
+    const offsetParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(now);
+    return offsetParts.find((p) => p.type === 'timeZoneName')?.value ?? 'UTC';
+  } catch {
+    const offsetParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      timeZoneName: 'short',
+    }).formatToParts(now);
+    return offsetParts.find((p) => p.type === 'timeZoneName')?.value ?? 'UTC';
+  }
 }
 
 function updateClock() {
@@ -375,7 +433,7 @@ function updateClock() {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: !use24Hour,
+    hourCycle: use24Hour ? 'h23' : 'h12',
   });
 
   const dateFmt = new Intl.DateTimeFormat('en-US', {
@@ -386,18 +444,16 @@ function updateClock() {
     day: 'numeric',
   });
 
-  const offsetParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: selectedTimezone,
-    timeZoneName: 'shortOffset',
-  }).formatToParts(now);
-  const tzOffset = offsetParts.find((p) => p.type === 'timeZoneName')?.value ?? 'UTC';
+  const tzOffset = getTimezoneOffsetLabel(now, selectedTimezone);
 
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: selectedTimezone,
+    year: 'numeric',
     day: 'numeric',
     month: 'long',
   }).formatToParts(now);
 
+  const year = parts.find((p) => p.type === 'year')?.value ?? '';
   const day = parts.find((p) => p.type === 'day')?.value ?? '--';
   const month = parts.find((p) => p.type === 'month')?.value ?? '———';
 
@@ -406,6 +462,12 @@ function updateClock() {
   document.getElementById('clock-offset').textContent = `${selectedTimezone.replace(/_/g, ' ')} (${tzOffset})`;
   document.getElementById('calendar-day').textContent = day;
   document.getElementById('calendar-month').textContent = month;
+
+  const dayKey = `${selectedTimezone}:${year}-${month}-${day}`;
+  if (lastRenderedDayKey && lastRenderedDayKey !== dayKey) {
+    renderMonthCalendar();
+  }
+  lastRenderedDayKey = dayKey;
 }
 
 function renderMonthCalendar() {
@@ -421,17 +483,7 @@ function renderMonthCalendar() {
     year: 'numeric',
   });
 
-  // Determine today's Y/M/D in the selected timezone
-  const nowParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: selectedTimezone,
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-  }).formatToParts(new Date());
-
-  const todayY = Number(nowParts.find((p) => p.type === 'year')?.value);
-  const todayM = Number(nowParts.find((p) => p.type === 'month')?.value) - 1;
-  const todayD = Number(nowParts.find((p) => p.type === 'day')?.value);
+  const { year: todayY, month: todayM, day: todayD } = getTodayInTimezone(selectedTimezone);
 
   const firstDayOfWeek = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -439,7 +491,6 @@ function renderMonthCalendar() {
 
   daysContainer.innerHTML = '';
 
-  // Leading days from previous month
   for (let i = firstDayOfWeek - 1; i >= 0; i--) {
     const cell = document.createElement('div');
     cell.className = 'cal-cell other-month';
@@ -447,7 +498,6 @@ function renderMonthCalendar() {
     daysContainer.appendChild(cell);
   }
 
-  // Current month days
   for (let d = 1; d <= daysInMonth; d++) {
     const cell = document.createElement('div');
     cell.className = 'cal-cell';
@@ -458,7 +508,6 @@ function renderMonthCalendar() {
     daysContainer.appendChild(cell);
   }
 
-  // Trailing days to complete grid
   const totalCells = firstDayOfWeek + daysInMonth;
   const trailing = (7 - (totalCells % 7)) % 7;
   for (let i = 1; i <= trailing; i++) {
@@ -473,17 +522,18 @@ function renderMonthCalendar() {
    2. WEATHER (Open-Meteo + °C/°F + Auto Locate)
    ══════════════════════════════════════════════════ */
 let weatherCoords = loadJSON(STORAGE_KEYS.weatherLocation, null);
-let weatherUnit = localStorage.getItem(STORAGE_KEYS.weatherUnit) || 'C'; // 'C' or 'F'
+let weatherUnit = localStorage.getItem(STORAGE_KEYS.weatherUnit) || 'C';
 let lastWeatherData = null;
+let weatherRequestId = 0;
 
 function formatTemp(celsius) {
-  if (celsius === undefined || celsius === null) return '--°';
+  if (celsius === undefined || celsius === null || Number.isNaN(Number(celsius))) return '--°';
   const val = weatherUnit === 'F' ? celsius * 1.8 + 32 : celsius;
   return `${Math.round(val)}°${weatherUnit}`;
 }
 
 function formatWind(kmh) {
-  if (kmh === undefined || kmh === null) return '—';
+  if (kmh === undefined || kmh === null || Number.isNaN(Number(kmh))) return '—';
   if (weatherUnit === 'F') {
     return `${Math.round(kmh * 0.621371)} mph`;
   }
@@ -513,11 +563,13 @@ async function detectIpLocation() {
   if (Number.isNaN(lat) || Number.isNaN(lon)) {
     throw new Error('Invalid coordinates from location service');
   }
-  const label = [data.city, data.region, data.country].filter(Boolean).join(', ') || 'Current Location';
+  const label =
+    [data.city, data.region, data.country].filter(Boolean).join(', ') || 'Current Location';
   return { lat, lon, label };
 }
 
 async function fetchWeather(lat, lon, label) {
+  const reqId = ++weatherRequestId;
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', lat);
   url.searchParams.set('longitude', lon);
@@ -535,6 +587,11 @@ async function fetchWeather(lat, lon, label) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('Weather request failed');
   const data = await res.json();
+
+  if (reqId !== weatherRequestId) return; // Superseded by a newer request
+  if (!data?.current || !data?.daily?.time) {
+    throw new Error('Unexpected weather data format');
+  }
 
   weatherCoords = { lat, lon, label };
   lastWeatherData = data;
@@ -558,13 +615,15 @@ function renderWeather(data, label) {
   document.getElementById('weather-icon').textContent = info.icon;
   document.getElementById('weather-temp').textContent = formatTemp(data.current.temperature_2m);
   document.getElementById('weather-desc').textContent = info.desc;
-  document.getElementById('weather-feels').textContent = formatTemp(data.current.apparent_temperature);
+  document.getElementById('weather-feels').textContent = formatTemp(
+    data.current.apparent_temperature
+  );
   document.getElementById('weather-humidity').textContent = `${data.current.relative_humidity_2m}%`;
   document.getElementById('weather-wind').textContent = formatWind(data.current.wind_speed_10m);
 
   const uvToday = data.daily?.uv_index_max?.[0];
   document.getElementById('weather-uv').textContent =
-    uvToday !== undefined && uvToday !== null ? uvToday.toFixed(1) : '—';
+    uvToday !== undefined && uvToday !== null ? Number(uvToday).toFixed(1) : '—';
 
   forecast.innerHTML = '';
   data.daily.time.forEach((dateStr, i) => {
@@ -576,24 +635,38 @@ function renderWeather(data, label) {
     const el = document.createElement('div');
     el.className = 'forecast-day';
     el.title = dayInfo.desc;
-    el.innerHTML = `
-      <span class="forecast-day-name">${dayName}</span>
-      <span class="forecast-day-icon">${dayInfo.icon}</span>
-      <span class="forecast-day-temps">
-        <strong>${formatTemp(data.daily.temperature_2m_max[i])}</strong><br>
-        ${formatTemp(data.daily.temperature_2m_min[i])}
-      </span>
-    `;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'forecast-day-name';
+    nameSpan.textContent = dayName;
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'forecast-day-icon';
+    iconSpan.textContent = dayInfo.icon;
+
+    const tempsSpan = document.createElement('span');
+    tempsSpan.className = 'forecast-day-temps';
+    const highStrong = document.createElement('strong');
+    highStrong.textContent = formatTemp(data.daily.temperature_2m_max[i]);
+    tempsSpan.append(
+      highStrong,
+      document.createElement('br'),
+      document.createTextNode(formatTemp(data.daily.temperature_2m_min[i]))
+    );
+
+    el.append(nameSpan, iconSpan, tempsSpan);
     forecast.appendChild(el);
   });
 }
 
-function setWeatherStatus(message) {
+function setWeatherStatus(message, hideExisting = true) {
   const status = document.getElementById('weather-status');
   status.hidden = false;
   status.textContent = message;
-  document.getElementById('weather-current').hidden = true;
-  document.getElementById('weather-forecast').hidden = true;
+  if (hideExisting) {
+    document.getElementById('weather-current').hidden = true;
+    document.getElementById('weather-forecast').hidden = true;
+  }
 }
 
 function initWeather() {
@@ -620,13 +693,13 @@ function initWeather() {
 
   locateBtn.addEventListener('click', async () => {
     playClickSound();
-    setWeatherStatus('Detecting location…');
+    setWeatherStatus('Detecting location…', !lastWeatherData);
     try {
       const loc = await detectIpLocation();
       input.value = loc.label;
       await fetchWeather(loc.lat, loc.lon, loc.label);
     } catch (err) {
-      setWeatherStatus(err.message || 'Could not auto-detect location.');
+      setWeatherStatus(err.message || 'Could not auto-detect location.', !lastWeatherData);
     }
   });
 
@@ -636,11 +709,11 @@ function initWeather() {
       locateBtn.click();
       return;
     }
-    setWeatherStatus('Refreshing forecast…');
+    setWeatherStatus('Refreshing forecast…', !lastWeatherData);
     try {
       await fetchWeather(weatherCoords.lat, weatherCoords.lon, weatherCoords.label);
     } catch {
-      setWeatherStatus('Could not refresh weather.');
+      setWeatherStatus('Could not refresh weather.', !lastWeatherData);
     }
   });
 
@@ -650,7 +723,7 @@ function initWeather() {
     if (!query) return;
 
     playClickSound();
-    setWeatherStatus('Loading forecast…');
+    setWeatherStatus('Loading forecast…', !lastWeatherData);
     try {
       const place = await searchLocation(query);
       const label = [place.name, place.admin1, place.country]
@@ -658,7 +731,7 @@ function initWeather() {
         .join(', ');
       await fetchWeather(place.latitude, place.longitude, label);
     } catch (err) {
-      setWeatherStatus(err.message || 'Could not load weather.');
+      setWeatherStatus(err.message || 'Could not load weather.', !lastWeatherData);
     }
   });
 
@@ -676,6 +749,7 @@ function initWeather() {
    ══════════════════════════════════════════════════ */
 let timerTotalSeconds = 25 * 60;
 let timerRemainingSeconds = 25 * 60;
+let timerEndTime = 0;
 let timerInterval = null;
 let timerLabel = 'Focus Session';
 
@@ -685,7 +759,7 @@ let swInterval = null;
 let swLaps = [];
 
 function getFocusSessionsToday() {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getLocalDateKey();
   const stored = loadJSON(STORAGE_KEYS.focusSessions, { date: todayStr, count: 0 });
   if (stored.date !== todayStr) {
     return { date: todayStr, count: 0 };
@@ -694,7 +768,7 @@ function getFocusSessionsToday() {
 }
 
 function saveFocusSessionsToday(count) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getLocalDateKey();
   saveJSON(STORAGE_KEYS.focusSessions, { date: todayStr, count });
   document.getElementById('focus-sessions-count').textContent = String(count);
 }
@@ -753,7 +827,6 @@ function initFocus() {
     timerPanel.hidden = true;
   });
 
-  // Presets
   const presetBtns = document.querySelectorAll('.preset-btn');
   presetBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -765,7 +838,6 @@ function initFocus() {
     });
   });
 
-  // Custom minutes
   document.getElementById('custom-minutes-set').addEventListener('click', () => {
     playClickSound();
     const raw = Number(document.getElementById('custom-minutes-input').value);
@@ -775,10 +847,10 @@ function initFocus() {
     setTimerPreset(mins, `Custom (${mins}m)`);
   });
 
-  // Start / Pause
   document.getElementById('timer-start-btn').addEventListener('click', () => {
     playClickSound();
     if (timerInterval) {
+      timerRemainingSeconds = Math.max(0, Math.ceil((timerEndTime - Date.now()) / 1000));
       stopTimerInterval();
       updateTimerUI();
       return;
@@ -788,26 +860,28 @@ function initFocus() {
       timerRemainingSeconds = timerTotalSeconds;
     }
 
+    timerEndTime = Date.now() + timerRemainingSeconds * 1000;
+
     timerInterval = setInterval(() => {
-      timerRemainingSeconds -= 1;
+      const nextRemaining = Math.max(0, Math.ceil((timerEndTime - Date.now()) / 1000));
+      timerRemainingSeconds = nextRemaining;
+
       if (timerRemainingSeconds <= 0) {
         timerRemainingSeconds = 0;
         stopTimerInterval();
         playAlarmChime();
 
-        // Increment session count if it was a Focus or Custom session
         if (!timerLabel.toLowerCase().includes('break')) {
           const current = getFocusSessionsToday();
           saveFocusSessionsToday(current.count + 1);
         }
       }
       updateTimerUI();
-    }, 1000);
+    }, 250);
 
     updateTimerUI();
   });
 
-  // Reset
   document.getElementById('timer-reset-btn').addEventListener('click', () => {
     playClickSound();
     stopTimerInterval();
@@ -815,7 +889,6 @@ function initFocus() {
     updateTimerUI();
   });
 
-  // Session counter init
   const sessionData = getFocusSessionsToday();
   document.getElementById('focus-sessions-count').textContent = String(sessionData.count);
 
@@ -870,7 +943,11 @@ function initFocus() {
     swLaps.forEach((lapTime, idx) => {
       const li = document.createElement('li');
       li.className = 'sw-lap-item';
-      li.innerHTML = `<span>Lap ${swLaps.length - idx}</span><strong>${lapTime}</strong>`;
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = `Lap ${swLaps.length - idx}`;
+      const timeStrong = document.createElement('strong');
+      timeStrong.textContent = lapTime;
+      li.append(labelSpan, timeStrong);
       swLapsList.appendChild(li);
     });
   });
@@ -896,7 +973,7 @@ function initFocus() {
    4. DAILY TASKS / TO-DO CHECKLIST
    ══════════════════════════════════════════════════ */
 let tasks = loadJSON(STORAGE_KEYS.tasks, []);
-let taskFilter = 'all'; // 'all' | 'active' | 'done'
+let taskFilter = 'all';
 
 function saveTasks() {
   saveJSON(STORAGE_KEYS.tasks, tasks);
@@ -1019,6 +1096,7 @@ let notes = loadJSON(STORAGE_KEYS.notes, []);
 let activeNoteId = localStorage.getItem(STORAGE_KEYS.activeNote) || null;
 let noteSearchQuery = '';
 let deleteConfirmTimeout = null;
+let copyFeedbackTimeout = null;
 
 function saveNotes() {
   saveJSON(STORAGE_KEYS.notes, notes);
@@ -1064,6 +1142,15 @@ function resetDeleteConfirm() {
   deleteBtn.textContent = 'Delete';
 }
 
+function resetCopyFeedback() {
+  const copyBtn = document.getElementById('copy-note-btn');
+  if (copyFeedbackTimeout) {
+    clearTimeout(copyFeedbackTimeout);
+    copyFeedbackTimeout = null;
+  }
+  if (copyBtn) copyBtn.textContent = 'Copy';
+}
+
 function renderNotesList() {
   const list = document.getElementById('notes-list');
   const empty = document.getElementById('notes-empty');
@@ -1101,6 +1188,7 @@ function renderNotesList() {
 
 function selectNote(id) {
   resetDeleteConfirm();
+  resetCopyFeedback();
   activeNoteId = id;
   if (id) {
     localStorage.setItem(STORAGE_KEYS.activeNote, id);
@@ -1143,6 +1231,12 @@ function selectNote(id) {
 
 function createNote() {
   playClickSound();
+  const searchInput = document.getElementById('note-search-input');
+  if (noteSearchQuery) {
+    noteSearchQuery = '';
+    if (searchInput) searchInput.value = '';
+  }
+
   const note = {
     id: generateId(),
     title: 'New note',
@@ -1228,9 +1322,11 @@ function initNotes() {
     playClickSound();
     try {
       await navigator.clipboard.writeText(`${note.title}\n\n${note.body}`.trim());
+      resetCopyFeedback();
       copyBtn.textContent = 'Copied!';
-      setTimeout(() => {
+      copyFeedbackTimeout = setTimeout(() => {
         copyBtn.textContent = 'Copy';
+        copyFeedbackTimeout = null;
       }, 1500);
     } catch {
       /* ignore clipboard error */
