@@ -1,6 +1,13 @@
 const STORAGE_KEYS = {
+  theme: 'desktools_theme',
+  sound: 'desktools_sound',
   timezone: 'desktools_timezone',
+  clock24h: 'desktools_clock_24h',
+  calendarMode: 'desktools_calendar_mode',
   weatherLocation: 'desktools_weather_location',
+  weatherUnit: 'desktools_weather_unit',
+  focusSessions: 'desktools_focus_sessions',
+  tasks: 'desktools_tasks',
   notes: 'desktools_notes',
   activeNote: 'desktools_active_note',
 };
@@ -69,28 +76,179 @@ function saveJSON(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-/* ── Navigation ── */
-function initNavigation() {
-  const buttons = document.querySelectorAll('.nav-btn');
-  const views = document.querySelectorAll('.view');
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
 
-  buttons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.view;
+/* ── Synthesized Retro Sound Effects (Web Audio API) ── */
+let soundEnabled = localStorage.getItem(STORAGE_KEYS.sound) !== 'false';
+let audioCtx = null;
 
-      buttons.forEach((b) => b.classList.toggle('active', b === btn));
-      views.forEach((view) => {
-        const isActive = view.id === `view-${target}`;
-        view.classList.toggle('active', isActive);
-        view.hidden = !isActive;
-      });
-    });
+function getAudioCtx() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      audioCtx = new AudioContextClass();
+    }
+  }
+  return audioCtx;
+}
+
+function playTone(freq = 600, duration = 0.05, type = 'sine', volume = 0.06) {
+  if (!soundEnabled) return;
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch {
+    /* ignore audio errors */
+  }
+}
+
+function playClickSound() {
+  playTone(680, 0.035, 'triangle', 0.05);
+}
+
+function playSuccessSound() {
+  playTone(587.33, 0.09, 'sine', 0.07);
+  setTimeout(() => playTone(880, 0.14, 'sine', 0.08), 80);
+}
+
+function playAlarmChime() {
+  const notes = [523.25, 659.25, 783.99, 1046.5];
+  notes.forEach((freq, idx) => {
+    setTimeout(() => playTone(freq, 0.22, 'sine', 0.12), idx * 140);
   });
 }
 
-/* ── Clock ── */
-let selectedTimezone = localStorage.getItem(STORAGE_KEYS.timezone) ||
+/* ── Titlebar & Theme Controls ── */
+function initTitlebar() {
+  const btnSound = document.getElementById('btn-sound');
+  const btnTheme = document.getElementById('btn-theme');
+  const btnPin = document.getElementById('btn-pin');
+  const btnMinimize = document.getElementById('btn-minimize');
+  const btnClose = document.getElementById('btn-close');
+
+  // Sound toggle
+  const updateSoundBtn = () => {
+    btnSound.textContent = soundEnabled ? '🔊' : '🔇';
+    btnSound.classList.toggle('active', soundEnabled);
+  };
+  updateSoundBtn();
+
+  btnSound.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    localStorage.setItem(STORAGE_KEYS.sound, String(soundEnabled));
+    updateSoundBtn();
+    if (soundEnabled) playClickSound();
+  });
+
+  // Dark Mode toggle
+  let isDark = localStorage.getItem(STORAGE_KEYS.theme) === 'dark';
+  const applyTheme = () => {
+    document.body.classList.toggle('dark-mode', isDark);
+    btnTheme.textContent = isDark ? '☀' : '🌙';
+    btnTheme.classList.toggle('active', isDark);
+  };
+  applyTheme();
+
+  btnTheme.addEventListener('click', () => {
+    isDark = !isDark;
+    localStorage.setItem(STORAGE_KEYS.theme, isDark ? 'dark' : 'light');
+    applyTheme();
+    playClickSound();
+  });
+
+  // Always-on-top Pin (via Electron preload bridge)
+  if (window.electronAPI) {
+    window.electronAPI.isPinned().then((pinned) => {
+      btnPin.classList.toggle('active', Boolean(pinned));
+    });
+
+    btnPin.addEventListener('click', async () => {
+      playClickSound();
+      const pinned = await window.electronAPI.togglePin();
+      btnPin.classList.toggle('active', Boolean(pinned));
+    });
+
+    btnMinimize.addEventListener('click', () => {
+      playClickSound();
+      window.electronAPI.minimize();
+    });
+
+    btnClose.addEventListener('click', () => {
+      window.electronAPI.close();
+    });
+  } else {
+    // Fallback when previewed in standard browser
+    btnPin.addEventListener('click', () => {
+      playClickSound();
+      btnPin.classList.toggle('active');
+    });
+    btnMinimize.addEventListener('click', () => playClickSound());
+    btnClose.addEventListener('click', () => window.close());
+  }
+}
+
+/* ── Navigation & Keyboard Shortcuts ── */
+function switchView(target) {
+  const buttons = document.querySelectorAll('.nav-btn');
+  const views = document.querySelectorAll('.view');
+
+  buttons.forEach((b) => b.classList.toggle('active', b.dataset.view === target));
+  views.forEach((view) => {
+    const isActive = view.id === `view-${target}`;
+    view.classList.toggle('active', isActive);
+    view.hidden = !isActive;
+  });
+}
+
+function initNavigation() {
+  const buttons = document.querySelectorAll('.nav-btn');
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      playClickSound();
+      switchView(btn.dataset.view);
+    });
+  });
+
+  // Alt+1 .. Alt+5 shortcuts
+  const viewOrder = ['clock', 'weather', 'focus', 'tasks', 'notes'];
+  window.addEventListener('keydown', (e) => {
+    if (e.altKey && e.key >= '1' && e.key <= '5') {
+      e.preventDefault();
+      const idx = Number(e.key) - 1;
+      if (viewOrder[idx]) {
+        playClickSound();
+        switchView(viewOrder[idx]);
+      }
+    }
+  });
+}
+
+/* ══════════════════════════════════════════════════
+   1. CLOCK & INTERACTIVE MONTHLY CALENDAR
+   ══════════════════════════════════════════════════ */
+let selectedTimezone =
+  localStorage.getItem(STORAGE_KEYS.timezone) ||
   Intl.DateTimeFormat().resolvedOptions().timeZone;
+let use24Hour = localStorage.getItem(STORAGE_KEYS.clock24h) === 'true';
+let showMonthGrid = localStorage.getItem(STORAGE_KEYS.calendarMode) === 'month';
+let calendarCursor = new Date(); // Tracks displayed month/year in grid
 
 function getTimezoneOptions() {
   if (typeof Intl.supportedValuesOf === 'function') {
@@ -103,31 +261,109 @@ function getTimezoneOptions() {
   return COMMON_TIMEZONES;
 }
 
-function initClock() {
+function populateTimezoneSelect(zones, filterText = '') {
   const select = document.getElementById('timezone-select');
-  const zones = getTimezoneOptions();
+  const query = filterText.trim().toLowerCase();
+  const filtered = query
+    ? zones.filter((z) => z.toLowerCase().replace(/_/g, ' ').includes(query))
+    : zones;
 
-  zones.forEach((zone) => {
+  select.innerHTML = '';
+  const listToRender = filtered.length > 0 ? filtered : [selectedTimezone];
+
+  listToRender.forEach((zone) => {
     const option = document.createElement('option');
     option.value = zone;
     option.textContent = zone.replace(/_/g, ' ');
     select.appendChild(option);
   });
 
-  if (zones.includes(selectedTimezone)) {
+  if (listToRender.includes(selectedTimezone)) {
     select.value = selectedTimezone;
   } else {
-    select.value = zones[0];
+    select.value = listToRender[0];
+    selectedTimezone = listToRender[0];
+    localStorage.setItem(STORAGE_KEYS.timezone, selectedTimezone);
+  }
+}
+
+function initClock() {
+  const select = document.getElementById('timezone-select');
+  const searchInput = document.getElementById('timezone-search');
+  const formatBtn = document.getElementById('clock-format-btn');
+  const calViewBtn = document.getElementById('calendar-view-btn');
+  const zones = getTimezoneOptions();
+
+  if (!zones.includes(selectedTimezone)) {
     selectedTimezone = zones[0];
   }
+
+  populateTimezoneSelect(zones);
+
+  searchInput.addEventListener('input', () => {
+    populateTimezoneSelect(zones, searchInput.value);
+    updateClock();
+    renderMonthCalendar();
+  });
 
   select.addEventListener('change', () => {
     selectedTimezone = select.value;
     localStorage.setItem(STORAGE_KEYS.timezone, selectedTimezone);
+    playClickSound();
+    updateClock();
+    renderMonthCalendar();
+  });
+
+  const syncFormatBtn = () => {
+    formatBtn.textContent = use24Hour ? '24H' : '12H';
+    formatBtn.classList.toggle('active', use24Hour);
+  };
+  syncFormatBtn();
+
+  formatBtn.addEventListener('click', () => {
+    use24Hour = !use24Hour;
+    localStorage.setItem(STORAGE_KEYS.clock24h, String(use24Hour));
+    playClickSound();
+    syncFormatBtn();
     updateClock();
   });
 
+  const syncCalView = () => {
+    document.getElementById('calendar-card').hidden = showMonthGrid;
+    document.getElementById('calendar-grid-card').hidden = !showMonthGrid;
+    calViewBtn.textContent = showMonthGrid ? 'Day ▢' : 'Month ▦';
+    calViewBtn.classList.toggle('active', showMonthGrid);
+  };
+  syncCalView();
+
+  calViewBtn.addEventListener('click', () => {
+    showMonthGrid = !showMonthGrid;
+    localStorage.setItem(STORAGE_KEYS.calendarMode, showMonthGrid ? 'month' : 'day');
+    playClickSound();
+    syncCalView();
+    renderMonthCalendar();
+  });
+
+  document.getElementById('cal-prev').addEventListener('click', () => {
+    playClickSound();
+    calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+    renderMonthCalendar();
+  });
+
+  document.getElementById('cal-next').addEventListener('click', () => {
+    playClickSound();
+    calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+    renderMonthCalendar();
+  });
+
+  document.getElementById('cal-title').addEventListener('click', () => {
+    playClickSound();
+    calendarCursor = new Date();
+    renderMonthCalendar();
+  });
+
   updateClock();
+  renderMonthCalendar();
   setInterval(updateClock, 1000);
 }
 
@@ -139,7 +375,7 @@ function updateClock() {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: true,
+    hour12: !use24Hour,
   });
 
   const dateFmt = new Intl.DateTimeFormat('en-US', {
@@ -149,6 +385,12 @@ function updateClock() {
     month: 'long',
     day: 'numeric',
   });
+
+  const offsetParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: selectedTimezone,
+    timeZoneName: 'shortOffset',
+  }).formatToParts(now);
+  const tzOffset = offsetParts.find((p) => p.type === 'timeZoneName')?.value ?? 'UTC';
 
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: selectedTimezone,
@@ -161,12 +403,92 @@ function updateClock() {
 
   document.getElementById('clock-time').textContent = timeFmt.format(now);
   document.getElementById('clock-date').textContent = dateFmt.format(now);
+  document.getElementById('clock-offset').textContent = `${selectedTimezone.replace(/_/g, ' ')} (${tzOffset})`;
   document.getElementById('calendar-day').textContent = day;
   document.getElementById('calendar-month').textContent = month;
 }
 
-/* ── Weather (Open-Meteo — open source, no API key) ── */
+function renderMonthCalendar() {
+  const daysContainer = document.getElementById('cal-days');
+  const titleBtn = document.getElementById('cal-title');
+  if (!daysContainer || !titleBtn) return;
+
+  const year = calendarCursor.getFullYear();
+  const month = calendarCursor.getMonth();
+
+  titleBtn.textContent = new Date(year, month, 1).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+  });
+
+  // Determine today's Y/M/D in the selected timezone
+  const nowParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: selectedTimezone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(new Date());
+
+  const todayY = Number(nowParts.find((p) => p.type === 'year')?.value);
+  const todayM = Number(nowParts.find((p) => p.type === 'month')?.value) - 1;
+  const todayD = Number(nowParts.find((p) => p.type === 'day')?.value);
+
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  daysContainer.innerHTML = '';
+
+  // Leading days from previous month
+  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell other-month';
+    cell.textContent = daysInPrevMonth - i;
+    daysContainer.appendChild(cell);
+  }
+
+  // Current month days
+  for (let d = 1; d <= daysInMonth; d++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell';
+    if (year === todayY && month === todayM && d === todayD) {
+      cell.classList.add('today');
+    }
+    cell.textContent = d;
+    daysContainer.appendChild(cell);
+  }
+
+  // Trailing days to complete grid
+  const totalCells = firstDayOfWeek + daysInMonth;
+  const trailing = (7 - (totalCells % 7)) % 7;
+  for (let i = 1; i <= trailing; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell other-month';
+    cell.textContent = i;
+    daysContainer.appendChild(cell);
+  }
+}
+
+/* ══════════════════════════════════════════════════
+   2. WEATHER (Open-Meteo + °C/°F + Auto Locate)
+   ══════════════════════════════════════════════════ */
 let weatherCoords = loadJSON(STORAGE_KEYS.weatherLocation, null);
+let weatherUnit = localStorage.getItem(STORAGE_KEYS.weatherUnit) || 'C'; // 'C' or 'F'
+let lastWeatherData = null;
+
+function formatTemp(celsius) {
+  if (celsius === undefined || celsius === null) return '--°';
+  const val = weatherUnit === 'F' ? celsius * 1.8 + 32 : celsius;
+  return `${Math.round(val)}°${weatherUnit}`;
+}
+
+function formatWind(kmh) {
+  if (kmh === undefined || kmh === null) return '—';
+  if (weatherUnit === 'F') {
+    return `${Math.round(kmh * 0.621371)} mph`;
+  }
+  return `${Math.round(kmh)} km/h`;
+}
 
 async function searchLocation(name) {
   const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
@@ -182,12 +504,31 @@ async function searchLocation(name) {
   return data.results[0];
 }
 
+async function detectIpLocation() {
+  const res = await fetch('https://get.geojs.io/v1/ip/geo.json');
+  if (!res.ok) throw new Error('Could not detect location');
+  const data = await res.json();
+  const lat = parseFloat(data.latitude);
+  const lon = parseFloat(data.longitude);
+  if (Number.isNaN(lat) || Number.isNaN(lon)) {
+    throw new Error('Invalid coordinates from location service');
+  }
+  const label = [data.city, data.region, data.country].filter(Boolean).join(', ') || 'Current Location';
+  return { lat, lon, label };
+}
+
 async function fetchWeather(lat, lon, label) {
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', lat);
   url.searchParams.set('longitude', lon);
-  url.searchParams.set('current', 'temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m');
-  url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min');
+  url.searchParams.set(
+    'current',
+    'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m'
+  );
+  url.searchParams.set(
+    'daily',
+    'weather_code,temperature_2m_max,temperature_2m_min,uv_index_max'
+  );
   url.searchParams.set('forecast_days', '5');
   url.searchParams.set('timezone', 'auto');
 
@@ -196,6 +537,7 @@ async function fetchWeather(lat, lon, label) {
   const data = await res.json();
 
   weatherCoords = { lat, lon, label };
+  lastWeatherData = data;
   saveJSON(STORAGE_KEYS.weatherLocation, weatherCoords);
   renderWeather(data, label);
 }
@@ -214,30 +556,32 @@ function renderWeather(data, label) {
 
   document.getElementById('weather-location-name').textContent = label;
   document.getElementById('weather-icon').textContent = info.icon;
-  document.getElementById('weather-temp').textContent =
-    `${Math.round(data.current.temperature_2m)}°`;
+  document.getElementById('weather-temp').textContent = formatTemp(data.current.temperature_2m);
   document.getElementById('weather-desc').textContent = info.desc;
-  document.getElementById('weather-humidity').textContent =
-    `Humidity: ${data.current.relative_humidity_2m}%`;
-  document.getElementById('weather-wind').textContent =
-    `Wind: ${Math.round(data.current.wind_speed_10m)} km/h`;
+  document.getElementById('weather-feels').textContent = formatTemp(data.current.apparent_temperature);
+  document.getElementById('weather-humidity').textContent = `${data.current.relative_humidity_2m}%`;
+  document.getElementById('weather-wind').textContent = formatWind(data.current.wind_speed_10m);
+
+  const uvToday = data.daily?.uv_index_max?.[0];
+  document.getElementById('weather-uv').textContent =
+    uvToday !== undefined && uvToday !== null ? uvToday.toFixed(1) : '—';
 
   forecast.innerHTML = '';
   data.daily.time.forEach((dateStr, i) => {
     const dayInfo = getWeatherInfo(data.daily.weather_code[i]);
     const date = new Date(dateStr + 'T12:00:00');
-    const dayName = i === 0
-      ? 'Today'
-      : date.toLocaleDateString('en-US', { weekday: 'short' });
+    const dayName =
+      i === 0 ? 'Today' : date.toLocaleDateString('en-US', { weekday: 'short' });
 
     const el = document.createElement('div');
     el.className = 'forecast-day';
+    el.title = dayInfo.desc;
     el.innerHTML = `
       <span class="forecast-day-name">${dayName}</span>
       <span class="forecast-day-icon">${dayInfo.icon}</span>
       <span class="forecast-day-temps">
-        ${Math.round(data.daily.temperature_2m_max[i])}°<br>
-        ${Math.round(data.daily.temperature_2m_min[i])}°
+        <strong>${formatTemp(data.daily.temperature_2m_max[i])}</strong><br>
+        ${formatTemp(data.daily.temperature_2m_min[i])}
       </span>
     `;
     forecast.appendChild(el);
@@ -255,12 +599,57 @@ function setWeatherStatus(message) {
 function initWeather() {
   const form = document.getElementById('location-form');
   const input = document.getElementById('location-input');
+  const unitBtn = document.getElementById('weather-unit-btn');
+  const locateBtn = document.getElementById('weather-locate-btn');
+  const refreshBtn = document.getElementById('weather-refresh-btn');
+
+  const syncUnitBtn = () => {
+    unitBtn.textContent = `°${weatherUnit}`;
+  };
+  syncUnitBtn();
+
+  unitBtn.addEventListener('click', () => {
+    weatherUnit = weatherUnit === 'C' ? 'F' : 'C';
+    localStorage.setItem(STORAGE_KEYS.weatherUnit, weatherUnit);
+    playClickSound();
+    syncUnitBtn();
+    if (lastWeatherData && weatherCoords) {
+      renderWeather(lastWeatherData, weatherCoords.label);
+    }
+  });
+
+  locateBtn.addEventListener('click', async () => {
+    playClickSound();
+    setWeatherStatus('Detecting location…');
+    try {
+      const loc = await detectIpLocation();
+      input.value = loc.label;
+      await fetchWeather(loc.lat, loc.lon, loc.label);
+    } catch (err) {
+      setWeatherStatus(err.message || 'Could not auto-detect location.');
+    }
+  });
+
+  refreshBtn.addEventListener('click', async () => {
+    playClickSound();
+    if (!weatherCoords) {
+      locateBtn.click();
+      return;
+    }
+    setWeatherStatus('Refreshing forecast…');
+    try {
+      await fetchWeather(weatherCoords.lat, weatherCoords.lon, weatherCoords.label);
+    } catch {
+      setWeatherStatus('Could not refresh weather.');
+    }
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const query = input.value.trim();
     if (!query) return;
 
+    playClickSound();
     setWeatherStatus('Loading forecast…');
     try {
       const place = await searchLocation(query);
@@ -282,94 +671,528 @@ function initWeather() {
   }
 }
 
-/* ── Notes ── */
+/* ══════════════════════════════════════════════════
+   3. FOCUS TIMER & STOPWATCH
+   ══════════════════════════════════════════════════ */
+let timerTotalSeconds = 25 * 60;
+let timerRemainingSeconds = 25 * 60;
+let timerInterval = null;
+let timerLabel = 'Focus Session';
+
+let swElapsedMs = 0;
+let swStartTime = 0;
+let swInterval = null;
+let swLaps = [];
+
+function getFocusSessionsToday() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const stored = loadJSON(STORAGE_KEYS.focusSessions, { date: todayStr, count: 0 });
+  if (stored.date !== todayStr) {
+    return { date: todayStr, count: 0 };
+  }
+  return stored;
+}
+
+function saveFocusSessionsToday(count) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  saveJSON(STORAGE_KEYS.focusSessions, { date: todayStr, count });
+  document.getElementById('focus-sessions-count').textContent = String(count);
+}
+
+function formatTimerMMSS(totalSec) {
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function updateTimerUI() {
+  document.getElementById('timer-display').textContent = formatTimerMMSS(timerRemainingSeconds);
+  document.getElementById('timer-label').textContent = timerLabel;
+  const pct =
+    timerTotalSeconds > 0
+      ? Math.max(0, Math.min(100, (timerRemainingSeconds / timerTotalSeconds) * 100))
+      : 0;
+  document.getElementById('timer-progress-bar').style.width = `${pct}%`;
+  document.getElementById('timer-start-btn').textContent = timerInterval ? '⏸ Pause' : '▶ Start';
+}
+
+function stopTimerInterval() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function setTimerPreset(minutes, label) {
+  stopTimerInterval();
+  timerTotalSeconds = minutes * 60;
+  timerRemainingSeconds = timerTotalSeconds;
+  timerLabel = label;
+  updateTimerUI();
+}
+
+function initFocus() {
+  const modePomodoroBtn = document.getElementById('mode-pomodoro-btn');
+  const modeStopwatchBtn = document.getElementById('mode-stopwatch-btn');
+  const timerPanel = document.getElementById('focus-timer-panel');
+  const swPanel = document.getElementById('focus-stopwatch-panel');
+
+  modePomodoroBtn.addEventListener('click', () => {
+    playClickSound();
+    modePomodoroBtn.classList.add('active');
+    modeStopwatchBtn.classList.remove('active');
+    timerPanel.hidden = false;
+    swPanel.hidden = true;
+  });
+
+  modeStopwatchBtn.addEventListener('click', () => {
+    playClickSound();
+    modeStopwatchBtn.classList.add('active');
+    modePomodoroBtn.classList.remove('active');
+    swPanel.hidden = false;
+    timerPanel.hidden = true;
+  });
+
+  // Presets
+  const presetBtns = document.querySelectorAll('.preset-btn');
+  presetBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      playClickSound();
+      presetBtns.forEach((b) => b.classList.toggle('active', b === btn));
+      const mins = Number(btn.dataset.minutes) || 25;
+      document.getElementById('custom-minutes-input').value = String(mins);
+      setTimerPreset(mins, btn.dataset.label || 'Focus Session');
+    });
+  });
+
+  // Custom minutes
+  document.getElementById('custom-minutes-set').addEventListener('click', () => {
+    playClickSound();
+    const raw = Number(document.getElementById('custom-minutes-input').value);
+    const mins = Math.max(1, Math.min(180, Number.isFinite(raw) ? Math.round(raw) : 25));
+    document.getElementById('custom-minutes-input').value = String(mins);
+    presetBtns.forEach((b) => b.classList.remove('active'));
+    setTimerPreset(mins, `Custom (${mins}m)`);
+  });
+
+  // Start / Pause
+  document.getElementById('timer-start-btn').addEventListener('click', () => {
+    playClickSound();
+    if (timerInterval) {
+      stopTimerInterval();
+      updateTimerUI();
+      return;
+    }
+
+    if (timerRemainingSeconds <= 0) {
+      timerRemainingSeconds = timerTotalSeconds;
+    }
+
+    timerInterval = setInterval(() => {
+      timerRemainingSeconds -= 1;
+      if (timerRemainingSeconds <= 0) {
+        timerRemainingSeconds = 0;
+        stopTimerInterval();
+        playAlarmChime();
+
+        // Increment session count if it was a Focus or Custom session
+        if (!timerLabel.toLowerCase().includes('break')) {
+          const current = getFocusSessionsToday();
+          saveFocusSessionsToday(current.count + 1);
+        }
+      }
+      updateTimerUI();
+    }, 1000);
+
+    updateTimerUI();
+  });
+
+  // Reset
+  document.getElementById('timer-reset-btn').addEventListener('click', () => {
+    playClickSound();
+    stopTimerInterval();
+    timerRemainingSeconds = timerTotalSeconds;
+    updateTimerUI();
+  });
+
+  // Session counter init
+  const sessionData = getFocusSessionsToday();
+  document.getElementById('focus-sessions-count').textContent = String(sessionData.count);
+
+  document.getElementById('focus-sessions-reset').addEventListener('click', () => {
+    playClickSound();
+    saveFocusSessionsToday(0);
+  });
+
+  // Stopwatch logic
+  const swDisplay = document.getElementById('sw-display');
+  const swStartBtn = document.getElementById('sw-start-btn');
+  const swLapBtn = document.getElementById('sw-lap-btn');
+  const swResetBtn = document.getElementById('sw-reset-btn');
+  const swLapsList = document.getElementById('sw-laps');
+
+  function formatStopwatch(ms) {
+    const totalTenths = Math.floor(ms / 100);
+    const tenths = totalTenths % 10;
+    const totalSecs = Math.floor(totalTenths / 10);
+    const secs = totalSecs % 60;
+    const mins = Math.floor(totalSecs / 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${tenths}`;
+  }
+
+  function renderStopwatch() {
+    const currentMs = swInterval ? swElapsedMs + (Date.now() - swStartTime) : swElapsedMs;
+    swDisplay.textContent = formatStopwatch(currentMs);
+  }
+
+  swStartBtn.addEventListener('click', () => {
+    playClickSound();
+    if (swInterval) {
+      swElapsedMs += Date.now() - swStartTime;
+      clearInterval(swInterval);
+      swInterval = null;
+      swStartBtn.textContent = '▶ Resume';
+      swLapBtn.disabled = true;
+    } else {
+      swStartTime = Date.now();
+      swInterval = setInterval(renderStopwatch, 100);
+      swStartBtn.textContent = '⏸ Pause';
+      swLapBtn.disabled = false;
+    }
+  });
+
+  swLapBtn.addEventListener('click', () => {
+    if (!swInterval) return;
+    playClickSound();
+    const currentMs = swElapsedMs + (Date.now() - swStartTime);
+    swLaps.unshift(formatStopwatch(currentMs));
+    swLapsList.innerHTML = '';
+    swLaps.forEach((lapTime, idx) => {
+      const li = document.createElement('li');
+      li.className = 'sw-lap-item';
+      li.innerHTML = `<span>Lap ${swLaps.length - idx}</span><strong>${lapTime}</strong>`;
+      swLapsList.appendChild(li);
+    });
+  });
+
+  swResetBtn.addEventListener('click', () => {
+    playClickSound();
+    if (swInterval) {
+      clearInterval(swInterval);
+      swInterval = null;
+    }
+    swElapsedMs = 0;
+    swLaps = [];
+    swLapsList.innerHTML = '';
+    swStartBtn.textContent = '▶ Start';
+    swLapBtn.disabled = true;
+    renderStopwatch();
+  });
+
+  updateTimerUI();
+}
+
+/* ══════════════════════════════════════════════════
+   4. DAILY TASKS / TO-DO CHECKLIST
+   ══════════════════════════════════════════════════ */
+let tasks = loadJSON(STORAGE_KEYS.tasks, []);
+let taskFilter = 'all'; // 'all' | 'active' | 'done'
+
+function saveTasks() {
+  saveJSON(STORAGE_KEYS.tasks, tasks);
+}
+
+function renderTasks() {
+  const list = document.getElementById('tasks-list');
+  const empty = document.getElementById('tasks-empty');
+  const summaryText = document.getElementById('task-summary-text');
+  const progressFill = document.getElementById('task-progress-fill');
+  const clearDoneBtn = document.getElementById('tasks-clear-done');
+
+  const totalCount = tasks.length;
+  const doneCount = tasks.filter((t) => t.done).length;
+  const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+  summaryText.textContent = `${doneCount} of ${totalCount} completed (${pct}%)`;
+  progressFill.style.width = `${pct}%`;
+  clearDoneBtn.hidden = doneCount === 0;
+
+  const filtered = tasks.filter((t) => {
+    if (taskFilter === 'active') return !t.done;
+    if (taskFilter === 'done') return t.done;
+    return true;
+  });
+
+  list.innerHTML = '';
+  empty.hidden = filtered.length > 0;
+
+  filtered.forEach((task) => {
+    const li = document.createElement('li');
+    li.className = `task-item${task.done ? ' done' : ''}`;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'task-checkbox';
+    checkbox.checked = Boolean(task.done);
+    checkbox.addEventListener('change', () => {
+      task.done = checkbox.checked;
+      if (task.done) playSuccessSound();
+      else playClickSound();
+      saveTasks();
+      renderTasks();
+    });
+
+    const span = document.createElement('span');
+    span.className = 'task-text';
+    span.textContent = task.text;
+
+    const badge = document.createElement('span');
+    const prio = task.priority || 'normal';
+    badge.className = `priority-badge priority-${prio}`;
+    badge.textContent = prio === 'normal' ? 'med' : prio;
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'task-del-btn';
+    delBtn.title = 'Delete task';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', () => {
+      playClickSound();
+      tasks = tasks.filter((t) => t.id !== task.id);
+      saveTasks();
+      renderTasks();
+    });
+
+    li.append(checkbox, span, badge, delBtn);
+    list.appendChild(li);
+  });
+}
+
+function initTasks() {
+  const form = document.getElementById('task-form');
+  const input = document.getElementById('task-input');
+  const prioritySelect = document.getElementById('task-priority');
+  const clearDoneBtn = document.getElementById('tasks-clear-done');
+  const filterBtns = document.querySelectorAll('#task-filters .mini-pill-btn');
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+
+    playClickSound();
+    tasks.unshift({
+      id: generateId(),
+      text,
+      priority: prioritySelect.value || 'normal',
+      done: false,
+      createdAt: Date.now(),
+    });
+    input.value = '';
+    saveTasks();
+    renderTasks();
+  });
+
+  filterBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      playClickSound();
+      taskFilter = btn.dataset.filter;
+      filterBtns.forEach((b) => b.classList.toggle('active', b === btn));
+      renderTasks();
+    });
+  });
+
+  clearDoneBtn.addEventListener('click', () => {
+    playClickSound();
+    tasks = tasks.filter((t) => !t.done);
+    saveTasks();
+    renderTasks();
+  });
+
+  renderTasks();
+}
+
+/* ══════════════════════════════════════════════════
+   5. NOTES STUDIO (Search, Pin, Stats, Copy, Export)
+   ══════════════════════════════════════════════════ */
 let notes = loadJSON(STORAGE_KEYS.notes, []);
 let activeNoteId = localStorage.getItem(STORAGE_KEYS.activeNote) || null;
-
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-}
+let noteSearchQuery = '';
+let deleteConfirmTimeout = null;
 
 function saveNotes() {
   saveJSON(STORAGE_KEYS.notes, notes);
 }
 
+function getSortedFilteredNotes() {
+  const q = noteSearchQuery.trim().toLowerCase();
+  const filtered = q
+    ? notes.filter(
+        (n) =>
+          (n.title || '').toLowerCase().includes(q) ||
+          (n.body || '').toLowerCase().includes(q)
+      )
+    : [...notes];
+
+  return filtered.sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+      return a.pinned ? -1 : 1;
+    }
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
+}
+
+function updateNoteStats(note) {
+  const statsEl = document.getElementById('note-stats');
+  if (!note) {
+    statsEl.textContent = '0 words · 0 chars';
+    return;
+  }
+  const body = note.body || '';
+  const chars = body.length;
+  const words = body.trim() ? body.trim().split(/\s+/).length : 0;
+  statsEl.textContent = `${words} word${words === 1 ? '' : 's'} · ${chars} char${chars === 1 ? '' : 's'}`;
+}
+
+function resetDeleteConfirm() {
+  const deleteBtn = document.getElementById('delete-note-btn');
+  if (deleteConfirmTimeout) {
+    clearTimeout(deleteConfirmTimeout);
+    deleteConfirmTimeout = null;
+  }
+  deleteBtn.classList.remove('confirming');
+  deleteBtn.textContent = 'Delete';
+}
+
 function renderNotesList() {
   const list = document.getElementById('notes-list');
   const empty = document.getElementById('notes-empty');
+  const displayed = getSortedFilteredNotes();
 
   list.innerHTML = '';
-  empty.hidden = notes.length > 0;
+  empty.hidden = displayed.length > 0;
+  empty.textContent = noteSearchQuery.trim()
+    ? 'No matching notes found.'
+    : 'No notes yet. Create one!';
 
-  notes.forEach((note) => {
+  displayed.forEach((note) => {
     const li = document.createElement('li');
-    li.textContent = note.title || 'Untitled';
     li.classList.toggle('active', note.id === activeNoteId);
-    li.addEventListener('click', () => selectNote(note.id));
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'note-li-title';
+    titleSpan.textContent = `${note.pinned ? '★ ' : ''}${note.title || 'Untitled'}`;
+
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'note-li-meta';
+    if (note.updatedAt) {
+      const d = new Date(note.updatedAt);
+      metaSpan.textContent = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    li.append(titleSpan, metaSpan);
+    li.addEventListener('click', () => {
+      playClickSound();
+      selectNote(note.id);
+    });
     list.appendChild(li);
   });
 }
 
 function selectNote(id) {
+  resetDeleteConfirm();
   activeNoteId = id;
-  localStorage.setItem(STORAGE_KEYS.activeNote, id);
+  if (id) {
+    localStorage.setItem(STORAGE_KEYS.activeNote, id);
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.activeNote);
+  }
 
   const note = notes.find((n) => n.id === id);
   const titleInput = document.getElementById('note-title');
   const bodyInput = document.getElementById('note-body');
-  const deleteBtn = document.getElementById('delete-note-btn');
+  const pinBtn = document.getElementById('pin-note-btn');
+  const footer = document.getElementById('note-footer');
 
   if (!note) {
     titleInput.value = '';
     bodyInput.value = '';
     titleInput.disabled = true;
     bodyInput.disabled = true;
-    deleteBtn.hidden = true;
+    pinBtn.disabled = true;
+    pinBtn.classList.remove('pinned');
+    pinBtn.textContent = '☆';
+    footer.hidden = true;
     renderNotesList();
     return;
   }
 
   titleInput.disabled = false;
   bodyInput.disabled = false;
-  deleteBtn.hidden = false;
+  pinBtn.disabled = false;
+  footer.hidden = false;
+
   titleInput.value = note.title;
   bodyInput.value = note.body;
+  pinBtn.classList.toggle('pinned', Boolean(note.pinned));
+  pinBtn.textContent = note.pinned ? '★' : '☆';
+
+  updateNoteStats(note);
   renderNotesList();
 }
 
 function createNote() {
+  playClickSound();
   const note = {
     id: generateId(),
     title: 'New note',
     body: '',
+    pinned: false,
     updatedAt: Date.now(),
   };
   notes.unshift(note);
   saveNotes();
   selectNote(note.id);
-  document.getElementById('note-title').focus();
-  document.getElementById('note-title').select();
+  const titleInput = document.getElementById('note-title');
+  titleInput.focus();
+  titleInput.select();
 }
 
-function deleteActiveNote() {
+function handleDeleteNoteClick() {
   if (!activeNoteId) return;
+  const deleteBtn = document.getElementById('delete-note-btn');
+
+  if (!deleteBtn.classList.contains('confirming')) {
+    playClickSound();
+    deleteBtn.classList.add('confirming');
+    deleteBtn.textContent = 'Sure?';
+    deleteConfirmTimeout = setTimeout(resetDeleteConfirm, 3000);
+    return;
+  }
+
+  playClickSound();
   notes = notes.filter((n) => n.id !== activeNoteId);
   saveNotes();
-  activeNoteId = notes[0]?.id ?? null;
-  if (activeNoteId) {
-    localStorage.setItem(STORAGE_KEYS.activeNote, activeNoteId);
-  } else {
-    localStorage.removeItem(STORAGE_KEYS.activeNote);
-  }
+  const remaining = getSortedFilteredNotes();
+  activeNoteId = remaining[0]?.id ?? null;
   selectNote(activeNoteId);
 }
 
 function initNotes() {
   document.getElementById('new-note-btn').addEventListener('click', createNote);
-  document.getElementById('delete-note-btn').addEventListener('click', deleteActiveNote);
+  document.getElementById('delete-note-btn').addEventListener('click', handleDeleteNoteClick);
 
+  const searchInput = document.getElementById('note-search-input');
   const titleInput = document.getElementById('note-title');
   const bodyInput = document.getElementById('note-body');
+  const pinBtn = document.getElementById('pin-note-btn');
+  const copyBtn = document.getElementById('copy-note-btn');
+  const exportBtn = document.getElementById('export-note-btn');
+
+  searchInput.addEventListener('input', () => {
+    noteSearchQuery = searchInput.value;
+    renderNotesList();
+  });
 
   titleInput.addEventListener('input', () => {
     const note = notes.find((n) => n.id === activeNoteId);
@@ -386,18 +1209,64 @@ function initNotes() {
     note.body = bodyInput.value;
     note.updatedAt = Date.now();
     saveNotes();
+    updateNoteStats(note);
+  });
+
+  pinBtn.addEventListener('click', () => {
+    const note = notes.find((n) => n.id === activeNoteId);
+    if (!note) return;
+    playClickSound();
+    note.pinned = !note.pinned;
+    note.updatedAt = Date.now();
+    saveNotes();
+    selectNote(note.id);
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    const note = notes.find((n) => n.id === activeNoteId);
+    if (!note) return;
+    playClickSound();
+    try {
+      await navigator.clipboard.writeText(`${note.title}\n\n${note.body}`.trim());
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy';
+      }, 1500);
+    } catch {
+      /* ignore clipboard error */
+    }
+  });
+
+  exportBtn.addEventListener('click', () => {
+    const note = notes.find((n) => n.id === activeNoteId);
+    if (!note) return;
+    playClickSound();
+    const content = `${note.title || 'Untitled'}\n${'='.repeat(24)}\n\n${note.body || ''}`;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeName = (note.title || 'note').replace(/[^a-z0-9_-]+/gi, '_').toLowerCase();
+    a.href = url;
+    a.download = `${safeName || 'note'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   });
 
   renderNotesList();
   if (activeNoteId && notes.some((n) => n.id === activeNoteId)) {
     selectNote(activeNoteId);
+  } else if (notes.length > 0) {
+    selectNote(notes[0].id);
   } else {
     selectNote(null);
   }
 }
 
 /* ── Boot ── */
+initTitlebar();
 initNavigation();
 initClock();
 initWeather();
+initFocus();
+initTasks();
 initNotes();
